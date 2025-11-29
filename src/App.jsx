@@ -1,36 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, DollarSign, Settings, Trash2, Edit2, Check, X, BarChart3, Calendar, StickyNote } from 'lucide-react';
+import { Mic, DollarSign, Settings, Trash2, Edit2, Check, X, BarChart3, Calendar, StickyNote, Wifi, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
 import { Input } from './components/ui/input';
 import { Badge } from './components/ui/badge';
+import { Toast } from './components/ui/toast';
+import MicroConfetti from './components/MicroConfetti';
+import { useTranscriptParser } from './hooks/useTranscriptParser';
+import { useSaveTransaction } from './hooks/useSaveTransaction';
 
 export default function SpendVoice() {
-  // State management
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStep, setProcessingStep] = useState(0);
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [confirmationData, setConfirmationData] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [allTransactions, setAllTransactions] = useState({});
-  const [showSettings, setShowSettings] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showCategorySelector, setShowCategorySelector] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState(null);
-  const [editingField, setEditingField] = useState(null);
-  const [tempEditValue, setTempEditValue] = useState('');
-  const [merchantCorrections, setMerchantCorrections] = useState({});
-  const [currentView, setCurrentView] = useState('today'); // today, charts
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-
-  // Refs
-  const recognitionRef = useRef(null);
-
   // Your 15 standardized categories with consistent colors
   const categories = [
     { name: 'Rent + Utilities', color: '#1e3a8a', bgColor: 'bg-blue-900', borderColor: 'border-blue-900', textColor: 'text-blue-900', icon: '🏘️' },
@@ -51,12 +32,49 @@ export default function SpendVoice() {
     { name: 'Self-Care', color: '#a855f7', bgColor: 'bg-purple-500', borderColor: 'border-purple-500', textColor: 'text-purple-500', icon: '💆' }
   ];
 
+  // State management
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [confirmationData, setConfirmationData] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [allTransactions, setAllTransactions] = useState({});
+  const [showSettings, setShowSettings] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [showCategorySelector, setShowCategorySelector] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editingField, setEditingField] = useState(null);
+  const [tempEditValue, setTempEditValue] = useState('');
+  const [merchantCorrections, setMerchantCorrections] = useState({});
+  const [currentView, setCurrentView] = useState('today');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  // Refs
+  const recognitionRef = useRef(null);
+
+  // Custom hooks
+  const { parseTranscript, isProcessing, processingStep } = useTranscriptParser(merchantCorrections, categories);
+  const { saveTransaction, showSuccess } = useSaveTransaction(webhookUrl, saveMerchantCorrection);
+
   // Load data on mount
   useEffect(() => {
     loadAllTransactions();
     loadWebhookUrl();
     loadMerchantCorrections();
     setupSpeechRecognition();
+
+    // Online/offline detection
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const loadAllTransactions = () => {
@@ -148,7 +166,7 @@ export default function SpendVoice() {
       recognitionRef.current.stop();
       setIsRecording(false);
       if (transcript) {
-        processTranscript(transcript);
+        processTranscriptHandler(transcript);
       }
     }
   };
@@ -161,20 +179,10 @@ export default function SpendVoice() {
     setTranscript('');
   };
 
-  const processTranscript = async (text) => {
-    setIsProcessing(true);
-    setProcessingStep(0);
-    
+  const processTranscriptHandler = async (text) => {
     try {
-      setProcessingStep(1);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      setProcessingStep(2);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      setProcessingStep(3);
-      const parsed = await parseExpenseVoiceNote(text);
-      
+      const parsed = await parseTranscript(text);
+
       setConfirmationData({
         amount: parsed.amount,
         merchant: parsed.merchant,
@@ -185,214 +193,36 @@ export default function SpendVoice() {
         note: '',
         raw_transcript: text
       });
-      
-      setIsProcessing(false);
-      setProcessingStep(0);
+
       setShowConfirmation(true);
-      
+
     } catch (error) {
-      console.error('AI parsing failed:', error);
-      setIsProcessing(false);
-      setProcessingStep(0);
+      console.error('Voice processing failed:', error);
       alert('Voice processing failed. Please try again.');
     }
   };
 
-  const parseExpenseVoiceNote = async (transcript) => {
-    const amountMatch = transcript.match(/(\d+(?:\.\d{2})?)\s*(?:dollars?|bucks?|\$)?/i);
-    const amount = amountMatch ? parseFloat(amountMatch[1]) : 0;
-    
-    const atMatch = transcript.match(/at\s+(\w+)/i);
-    const originalMerchant = atMatch ? atMatch[1] : 'Unknown';
-    
-    const merchant = extractMerchant(transcript);
-    const category = guessCategory(merchant, transcript);
-    
-    return {
-      amount: amount,
-      merchant: merchant,
-      originalMerchant: originalMerchant,
-      category: category,
-      subcategory: '',
-      confidence: 0.85,
-      note: ''
-    };
-  };
-
-  const extractMerchant = (text) => {
-    const lowerText = text.toLowerCase();
-    
-    // Check for ETF/investment keywords first
-    if (lowerText.includes('share') || lowerText.includes('etf') || 
-        lowerText.includes('stock') || lowerText.includes('investment')) {
-      
-      // Check for specific ETFs (your 3 tickers)
-      // HMAX variations
-      if (lowerText.includes('hmax') || lowerText.includes('h max') || 
-          lowerText.includes('age max') || lowerText.includes('each max') ||
-          lowerText.includes('h m a x')) {
-        return 'HMAX';
+  const confirmTransactionHandler = async () => {
+    const success = await saveTransaction(
+      confirmationData,
+      transactions,
+      allTransactions,
+      (updatedTransactions, updatedAllTransactions) => {
+        setTransactions(updatedTransactions);
+        setAllTransactions(updatedAllTransactions);
       }
-      
-      // YTSL variations
-      if (lowerText.includes('ytsl') || lowerText.includes('y t s l') ||
-          lowerText.includes('white sell') || lowerText.includes('y cell') ||
-          lowerText.includes('y tsl')) {
-        return 'YTSL';
-      }
-      
-      // YNVD variations
-      if (lowerText.includes('ynvd') || lowerText.includes('y n v d') ||
-          lowerText.includes('invited') || lowerText.includes('envied') ||
-          lowerText.includes('why envied') || lowerText.includes('y nvd')) {
-        return 'YNVD';
-      }
-      
-      // Generic investment if we detected "share" but not specific ticker
-      return 'Wealthsimple';
-    }
-    
-    // Original merchant detection logic
-    const atMatch = text.match(/at\s+(\w+)/i);
-    let rawMerchant = '';
-    
-    if (atMatch) {
-      rawMerchant = atMatch[1];
-    } else {
-      // Your Tier 1 recurring vendors (70-75% of transactions)
-      const merchants = [
-        // Cafés
-        'starbucks', 'kosa', 'phil', 'sebastian',
-        // Groceries  
-        'freshco', 'safeway', 'sunterra', 'sunnyside',
-        // Car
-        'shell', 'centex', 'petro', 'canada',
-        // General
-        'chipotle', 'walmart', 'target'
-      ];
-      
-      for (const merchant of merchants) {
-        if (text.toLowerCase().includes(merchant)) {
-          rawMerchant = merchant.charAt(0).toUpperCase() + merchant.slice(1);
-          return rawMerchant;
-        }
-      }
-      rawMerchant = 'Unknown';
-    }
-    
-    const key = rawMerchant.toLowerCase().trim();
-    if (merchantCorrections[key]) {
-      console.log(`Auto-correcting: "${rawMerchant}" → "${merchantCorrections[key]}"`);
-      return merchantCorrections[key];
-    }
-    
-    return rawMerchant.charAt(0).toUpperCase() + rawMerchant.slice(1);
-  };
+    );
 
-  const guessCategory = (merchant, text) => {
-    const lowerText = text.toLowerCase();
-    const lowerMerchant = merchant.toLowerCase();
-    
-    // Investments - check for ETF tickers or investment keywords
-    if (merchant === 'HMAX' || merchant === 'YTSL' || merchant === 'YNVD' || 
-        lowerMerchant === 'wealthsimple' ||
-        lowerText.includes('share') || lowerText.includes('etf') || 
-        lowerText.includes('stock') || lowerText.includes('investment')) {
-      return 'Investments';
-    }
-    
-    // Coffee + Cafés (Tier 1: Kosa, Phil & Sebastian, Starbucks)
-    if (lowerText.includes('coffee') || lowerText.includes('cafe') ||
-        lowerText.includes('americano') || lowerText.includes('espresso') ||
-        lowerMerchant.includes('starbucks') || lowerMerchant.includes('kosa') ||
-        lowerMerchant.includes('phil') || lowerMerchant.includes('sebastian')) {
-      return 'Coffee + Cafes';
-    }
-    
-    // Groceries (Tier 1: FreshCo, Sunnyside, Sunterra, Safeway)
-    if (lowerText.includes('groceries') ||
-        lowerMerchant.includes('freshco') || lowerMerchant.includes('safeway') || 
-        lowerMerchant.includes('sunterra') || lowerMerchant.includes('sunnyside')) {
-      return 'Groceries & Household';
-    }
-    
-    // Car (Tier 1: Shell, Centex, Petro Canada)
-    if (lowerText.includes('gas') || lowerText.includes('fuel') || lowerText.includes('petrol') ||
-        lowerMerchant.includes('shell') || lowerMerchant.includes('centex') ||
-        lowerMerchant.includes('petro') || lowerMerchant.includes('canada')) {
-      return 'Car';
-    }
-    
-    // Snacks + Eating Out
-    if (lowerText.includes('pizza') || lowerText.includes('takeout') || 
-        lowerText.includes('fast food') || lowerMerchant.includes('mcdonalds')) {
-      return 'Snacks + Eating Out';
-    }
-    
-    return 'Misc';
-  };
+    if (success) {
+      // Show confetti animation
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 400);
 
-  const confirmTransaction = async () => {
-    const transaction = {
-      id: Date.now(),
-      amount: confirmationData.amount,
-      merchant: confirmationData.merchant,
-      category: confirmationData.category,
-      subcategory: confirmationData.subcategory,
-      timestamp: new Date().toISOString(),
-      date: new Date().toISOString().split('T')[0],
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      raw_transcript: confirmationData.raw_transcript,
-      confidence: confirmationData.confidence,
-      edited: false,
-      note: confirmationData.note || ''
-    };
-
-    if (confirmationData.originalMerchant && 
-        confirmationData.originalMerchant.toLowerCase() !== confirmationData.merchant.toLowerCase()) {
-      saveMerchantCorrection(confirmationData.originalMerchant, confirmationData.merchant);
+      // Clear confirmation UI
+      setShowConfirmation(false);
+      setConfirmationData(null);
+      setTranscript('');
     }
-
-    const updatedTransactions = [transaction, ...transactions];
-    setTransactions(updatedTransactions);
-    
-    const today = new Date().toISOString().split('T')[0];
-    localStorage.setItem(`spending:${today}`, JSON.stringify(updatedTransactions));
-
-    // Update month data
-    const updatedAllTransactions = {
-      ...allTransactions,
-      [today]: updatedTransactions
-    };
-    setAllTransactions(updatedAllTransactions);
-
-    if (webhookUrl) {
-      try {
-        await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            date: transaction.date,
-            timestamp: transaction.timestamp,
-            amount: transaction.amount,
-            merchant: transaction.merchant,
-            category: transaction.category,
-            subcategory: transaction.subcategory,
-            raw_transcript: transaction.raw_transcript,
-            confidence: transaction.confidence,
-            note: transaction.note
-          })
-        });
-      } catch (error) {
-        console.error('Webhook failed:', error);
-      }
-    }
-
-    setShowConfirmation(false);
-    setConfirmationData(null);
-    setTranscript('');
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2000);
   };
 
   const deleteTransaction = (id) => {
@@ -469,7 +299,7 @@ export default function SpendVoice() {
 
   const getCategoryTotals = () => {
     const totals = {};
-    
+
     Object.values(allTransactions).forEach(dayTransactions => {
       dayTransactions.forEach(t => {
         if (!totals[t.category]) {
@@ -480,12 +310,36 @@ export default function SpendVoice() {
     });
 
     // Convert to array and sort by amount (largest first)
-    return Object.entries(totals)
+    const sorted = Object.entries(totals)
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount);
+
+    // Show only top 5, group the rest as "Other"
+    if (sorted.length <= 5) {
+      return sorted;
+    }
+
+    const top5 = sorted.slice(0, 5);
+    const otherAmount = sorted.slice(5).reduce((sum, item) => sum + item.amount, 0);
+
+    if (otherAmount > 0) {
+      top5.push({ category: 'Other', amount: otherAmount });
+    }
+
+    return top5;
   };
 
   const getCategoryStyle = (categoryName) => {
+    if (categoryName === 'Other') {
+      return {
+        name: 'Other',
+        color: '#9ca3af',
+        bgColor: 'bg-gray-400',
+        borderColor: 'border-gray-400',
+        textColor: 'text-gray-400',
+        icon: '📦'
+      };
+    }
     const cat = categories.find(c => c.name === categoryName);
     return cat || categories[5]; // Default to Misc
   };
@@ -537,6 +391,14 @@ export default function SpendVoice() {
                 <DollarSign className="w-5 h-5 text-white" />
               </div>
               <span className="text-lg font-semibold text-gray-800">SpendVoice</span>
+              {/* Online/Offline Indicator */}
+              <div className="flex items-center gap-1">
+                {isOnline ? (
+                  <div className="w-2 h-2 bg-green-400 rounded-full" title="Online" />
+                ) : (
+                  <div className="w-2 h-2 bg-gray-400 rounded-full" title="Offline" />
+                )}
+              </div>
             </div>
             <Button
               variant="ghost"
@@ -643,26 +505,6 @@ export default function SpendVoice() {
               </Card>
             </div>
 
-            {/* Success Notification */}
-            <AnimatePresence>
-              {showSuccess && (
-                <motion.div
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                >
-                  <Card className="bg-green-50 border-2 border-green-200 mb-6">
-                    <CardContent className="p-4 text-center">
-                      <div className="text-green-600 font-semibold mb-1">✓ Saved!</div>
-                      <div className="text-xs text-gray-600">
-                        Added to today's expenses
-                        {webhookUrl && ' • Synced to Google Sheets'}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              )}
-            </AnimatePresence>
 
             {/* Voice Recording UI */}
             <AnimatePresence>
@@ -679,11 +521,11 @@ export default function SpendVoice() {
                         <span className="text-base font-medium text-gray-700">Listening</span>
                       </div>
 
-                      <div className="flex justify-center items-center gap-1 mb-8 h-16">
+                      <div className="flex justify-center items-center gap-1.5 mb-8 h-16">
                         {[...Array(5)].map((_, i) => (
                           <motion.div
                             key={i}
-                            className="w-2 bg-gradient-to-t from-green-500 to-emerald-600 rounded-full"
+                            className="w-2 bg-gradient-to-t from-green-500 to-emerald-600 rounded-full shadow-lg shadow-green-400/50"
                             animate={{
                               height: ['20%', '100%', '20%'],
                             }}
@@ -691,6 +533,7 @@ export default function SpendVoice() {
                               duration: 0.8,
                               repeat: Infinity,
                               delay: i * 0.1,
+                              ease: [0.4, 0.0, 0.2, 1],
                             }}
                           />
                         ))}
@@ -756,10 +599,11 @@ export default function SpendVoice() {
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
+                  exit={{ opacity: 0, y: -30 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 >
-                  <Card className="shadow-xl shadow-green-100/50 mb-6">
-                    <CardContent className="p-8 text-center">
+                  <Card className="shadow-md shadow-green-100/30 mb-6 border border-gray-100">
+                    <CardContent className="p-10 text-center">
                       {/* Editable Amount */}
                       {editingField === 'amount' ? (
                         <div className="mb-8">
@@ -839,12 +683,12 @@ export default function SpendVoice() {
                               setEditingField('merchant');
                               setTempEditValue(confirmationData.merchant);
                             }}
-                            className="bg-gray-50 rounded-xl p-4 cursor-pointer hover:bg-gray-100 transition-colors"
+                            className="bg-gray-50 rounded-xl p-5 cursor-pointer hover:bg-gray-100 transition-colors"
                           >
-                            <div className="text-xs text-gray-500 mb-1">Merchant</div>
-                            <div className="text-xl font-semibold text-gray-900 flex items-center justify-center gap-2">
+                            <div className="text-xs text-gray-500 mb-2">Merchant</div>
+                            <div className="text-base font-medium text-gray-600 flex items-center justify-center gap-2">
                               {confirmationData.merchant}
-                              <Edit2 className="w-4 h-4 text-gray-400" />
+                              <Edit2 className="w-3.5 h-3.5 text-gray-400" />
                             </div>
                           </div>
                         )}
@@ -882,11 +726,15 @@ export default function SpendVoice() {
                         </div>
                       </div>
 
-                      <Badge variant="default" className="mb-6">
+                      <p className="text-sm text-gray-500 mb-6">
+                        Review and confirm your details
+                      </p>
+
+                      <Badge variant="default" className="mb-8 opacity-80">
                         Tap to edit • Confidence: {Math.round(confirmationData.confidence * 100)}%
                       </Badge>
 
-                      <Button onClick={confirmTransaction} className="w-full mb-3" size="xl">
+                      <Button onClick={confirmTransactionHandler} className="w-full mb-3" size="xl">
                         Looks Good
                       </Button>
 
@@ -906,14 +754,26 @@ export default function SpendVoice() {
             {/* Primary Action Button */}
             {!isRecording && !isProcessing && !showConfirmation && (
               <div className="mb-8">
-                <Button
-                  onClick={startRecording}
-                  className="w-full shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300"
-                  size="xl"
+                <motion.div
+                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.02 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 >
-                  <Mic className="w-6 h-6 mr-3" />
-                  <span>Tap to Log</span>
-                </Button>
+                  <Button
+                    onClick={startRecording}
+                    className="w-full shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 relative overflow-hidden"
+                    size="xl"
+                  >
+                    <motion.div
+                      className="absolute inset-0 bg-white/20 rounded-full"
+                      initial={{ scale: 0, opacity: 0.5 }}
+                      whileTap={{ scale: 4, opacity: 0 }}
+                      transition={{ duration: 0.5 }}
+                    />
+                    <Mic className="w-6 h-6 mr-3 relative z-10" />
+                    <span className="relative z-10">Tap to Log</span>
+                  </Button>
+                </motion.div>
                 <p className="text-center text-sm text-gray-500 mt-4">
                   Say what you spent
                 </p>
@@ -932,10 +792,10 @@ export default function SpendVoice() {
                     const isEditing = editingTransaction?.id === transaction.id;
                     
                     return (
-                      <Card key={transaction.id} className="group hover:shadow-md transition-shadow transaction-card">
-                        <CardContent className="p-4">
+                      <Card key={transaction.id} className="group hover:shadow-sm transition-all transaction-card border border-gray-100">
+                        <CardContent className="p-5">
                           <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-start gap-3 flex-1">
+                            <div className="flex items-start gap-4 flex-1">
                               <div className={`w-12 h-12 ${categoryStyle.bgColor} rounded-full border-2 ${categoryStyle.borderColor} flex items-center justify-center flex-shrink-0`}>
                                 <span className="text-2xl">
                                   {categoryStyle.icon}
@@ -965,16 +825,16 @@ export default function SpendVoice() {
                                       setEditingField('merchant');
                                       setTempEditValue(transaction.merchant);
                                     }}
-                                    className="font-semibold text-gray-900 text-base cursor-pointer hover:text-green-600 transition-colors"
+                                    className="font-bold text-gray-900 text-lg cursor-pointer hover:text-green-600 transition-colors"
                                   >
                                     {transaction.merchant}
                                   </div>
                                 )}
-                                
-                                <div className="text-sm text-gray-500">
+
+                                <Badge variant="outline" className={`text-xs px-2 py-0.5 ${getCategoryStyle(transaction.category).textColor} border-current opacity-70`}>
                                   {transaction.category}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
+                                </Badge>
+                                <div className="text-xs text-gray-400 mt-1.5">
                                   {transaction.time}
                                 </div>
                               </div>
@@ -1004,7 +864,7 @@ export default function SpendVoice() {
                                     setEditingField('amount');
                                     setTempEditValue(transaction.amount.toString());
                                   }}
-                                  className="text-base font-bold text-gray-900 font-mono tabular-nums cursor-pointer hover:text-green-600 transition-colors"
+                                  className="text-xl font-bold text-gray-900 font-mono tabular-nums cursor-pointer hover:text-green-600 transition-colors"
                                 >
                                   {formatCurrency(transaction.amount)}
                                 </div>
@@ -1091,15 +951,19 @@ export default function SpendVoice() {
 
             {/* Empty State */}
             {transactions.length === 0 && !isRecording && !isProcessing && !showConfirmation && (
-              <Card>
-                <CardContent className="text-center py-12">
-                  <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <DollarSign className="w-8 h-8 text-green-600" />
+              <Card className="border-2 border-dashed border-gray-200">
+                <CardContent className="text-center py-16 px-6">
+                  <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <DollarSign className="w-10 h-10 text-green-600" />
                   </div>
-                  <CardTitle className="text-base mb-2">Ready to Track</CardTitle>
-                  <p className="text-sm text-gray-500 max-w-xs mx-auto">
-                    Tap the button above to log your first expense
+                  <CardTitle className="text-lg mb-3 text-gray-800">Tap to log your first expense</CardTitle>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Just speak naturally and I'll do the rest
                   </p>
+                  <div className="bg-gray-50 rounded-lg px-4 py-3 inline-block">
+                    <p className="text-xs text-gray-600 mb-1">Try saying:</p>
+                    <p className="text-sm font-medium text-gray-700">"Spent $4 on coffee at Starbucks"</p>
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -1241,6 +1105,12 @@ export default function SpendVoice() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Micro-Confetti */}
+      <MicroConfetti show={showConfetti} />
+
+      {/* Success Toast */}
+      <Toast show={showSuccess} />
     </div>
   );
 }
