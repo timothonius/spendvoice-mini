@@ -12,9 +12,8 @@ import { PrivacyModal } from './components/PrivacyModal';
 import { useTranscriptParser } from './hooks/useTranscriptParser';
 import { useSaveTransaction } from './hooks/useSaveTransaction';
 
-export default function SpendVoice() {
-  // Your 15 standardized categories with consistent colors
-  const categories = [
+// Move categories outside component to avoid re-creation
+const categories = [
     { name: 'Rent + Utilities', color: '#1e3a8a', bgColor: 'bg-blue-900', borderColor: 'border-blue-900', textColor: 'text-blue-900', icon: '🏘️' },
     { name: 'Coffee + Cafes', color: '#78350f', bgColor: 'bg-amber-900', borderColor: 'border-amber-900', textColor: 'text-amber-900', icon: '☕' },
     { name: 'Groceries & Household', color: '#15803d', bgColor: 'bg-green-700', borderColor: 'border-green-700', textColor: 'text-green-700', icon: '🛒' },
@@ -31,8 +30,9 @@ export default function SpendVoice() {
     { name: 'Debt', color: '#991b1b', bgColor: 'bg-red-800', borderColor: 'border-red-800', textColor: 'text-red-800', icon: '💳' },
     { name: 'Credit Building', color: '#06b6d4', bgColor: 'bg-cyan-500', borderColor: 'border-cyan-500', textColor: 'text-cyan-500', icon: '🏦' },
     { name: 'Self-Care', color: '#a855f7', bgColor: 'bg-purple-500', borderColor: 'border-purple-500', textColor: 'text-purple-500', icon: '💆' }
-  ];
+];
 
+export default function SpendVoice() {
   // State management
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -55,6 +55,18 @@ export default function SpendVoice() {
 
   // Refs
   const recognitionRef = useRef(null);
+
+  // Define saveMerchantCorrection BEFORE hooks
+  const saveMerchantCorrection = (heardAs, correctName) => {
+    const key = heardAs.toLowerCase().trim();
+    const updated = {
+      ...merchantCorrections,
+      [key]: correctName
+    };
+    setMerchantCorrections(updated);
+    localStorage.setItem('merchant-corrections', JSON.stringify(updated));
+    console.log(`Learned: "${heardAs}" → "${correctName}"`);
+  };
 
   // Custom hooks
   const { parseTranscript, isProcessing, processingStep } = useTranscriptParser(merchantCorrections, categories);
@@ -114,17 +126,6 @@ export default function SpendVoice() {
     if (stored) {
       setMerchantCorrections(JSON.parse(stored));
     }
-  };
-
-  const saveMerchantCorrection = (heardAs, correctName) => {
-    const key = heardAs.toLowerCase().trim();
-    const updated = {
-      ...merchantCorrections,
-      [key]: correctName
-    };
-    setMerchantCorrections(updated);
-    localStorage.setItem('merchant-corrections', JSON.stringify(updated));
-    console.log(`Learned: "${heardAs}" → "${correctName}"`);
   };
 
   const setupSpeechRecognition = () => {
