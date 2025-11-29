@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, DollarSign, Settings, Trash2, Edit2, Check, X, BarChart3, Calendar, StickyNote, Wifi, WifiOff } from 'lucide-react';
+import { Mic, DollarSign, Settings, Trash2, Edit2, Check, X, BarChart3, Calendar, StickyNote, Wifi, WifiOff, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
@@ -8,6 +8,7 @@ import { Input } from './components/ui/input';
 import { Badge } from './components/ui/badge';
 import { Toast } from './components/ui/toast';
 import MicroConfetti from './components/MicroConfetti';
+import { PrivacyModal } from './components/PrivacyModal';
 import { useTranscriptParser } from './hooks/useTranscriptParser';
 import { useSaveTransaction } from './hooks/useSaveTransaction';
 
@@ -50,6 +51,7 @@ export default function SpendVoice() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // Refs
   const recognitionRef = useRef(null);
@@ -380,6 +382,53 @@ export default function SpendVoice() {
     setTimeout(() => setShowSuccess(false), 2000);
   };
 
+  const clearAllData = () => {
+    // Clear all localStorage keys related to the app
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('spending:') || key === 'webhook-url' || key === 'merchant-corrections') {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+
+    // Reset all state
+    setTransactions([]);
+    setAllTransactions({});
+    setWebhookUrl('');
+    setMerchantCorrections({});
+    setShowSettings(false);
+
+    // Show success message
+    alert('All data has been cleared successfully.');
+  };
+
+  const exportAllData = () => {
+    // Gather all data
+    const allData = {
+      exportDate: new Date().toISOString(),
+      appVersion: '1.0.0',
+      transactions: allTransactions,
+      settings: {
+        webhookUrl: webhookUrl
+      },
+      merchantCorrections: merchantCorrections
+    };
+
+    // Create downloadable JSON file
+    const dataStr = JSON.stringify(allData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `spendvoice-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-50 pb-24">
       {/* Header */}
@@ -452,6 +501,22 @@ export default function SpendVoice() {
                 }}
                 placeholder="https://hook.us2.make.com/..."
               />
+            </div>
+
+            {/* Data & Privacy */}
+            <div className="pt-4 border-t border-gray-200">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setShowPrivacyModal(true);
+                  setShowSettings(false);
+                }}
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                Data & Privacy
+              </Button>
             </div>
 
             {/* Clear Month Data */}
@@ -1111,6 +1176,14 @@ export default function SpendVoice() {
 
       {/* Success Toast */}
       <Toast show={showSuccess} />
+
+      {/* Privacy Modal */}
+      <PrivacyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+        onClearAllData={clearAllData}
+        onExportData={exportAllData}
+      />
     </div>
   );
 }
