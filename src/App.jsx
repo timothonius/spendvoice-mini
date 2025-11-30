@@ -542,12 +542,12 @@ export default function SpendVoice() {
         </div>
       )}
 
-      <div className="max-w-md mx-auto px-6 py-8">
+      <div className="max-w-md mx-auto px-6 py-12">
         {/* Today View */}
         {currentView === 'today' && (
           <>
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="grid grid-cols-2 gap-4 mb-12">
               <Card className="bg-green-50 border-2 border-green-200">
                 <CardContent className="p-6">
                   <div className="text-xs text-green-700 font-medium mb-1 uppercase tracking-wide">
@@ -819,7 +819,7 @@ export default function SpendVoice() {
 
             {/* Primary Action Button */}
             {!isRecording && !isProcessing && !showConfirmation && (
-              <div className="mb-8">
+              <div className="mb-10">
                 <motion.div
                   whileTap={{ scale: 0.95 }}
                   whileHover={{ scale: 1.02 }}
@@ -827,7 +827,7 @@ export default function SpendVoice() {
                 >
                   <Button
                     onClick={startRecording}
-                    className="w-full shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 relative overflow-hidden"
+                    className="w-full shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 relative overflow-hidden py-5 rounded-[0.625rem]"
                     size="xl"
                   >
                     <motion.div
@@ -836,12 +836,25 @@ export default function SpendVoice() {
                       whileTap={{ scale: 4, opacity: 0 }}
                       transition={{ duration: 0.5 }}
                     />
-                    <Mic className="w-6 h-6 mr-3 relative z-10" />
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.05, 1],
+                        opacity: [1, 0.9, 1],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                      className="relative z-10"
+                    >
+                      <Mic className="w-6 h-6 mr-3" />
+                    </motion.div>
                     <span className="relative z-10">Tap to Log</span>
                   </Button>
                 </motion.div>
-                <p className="text-center text-sm text-gray-500 mt-4">
-                  Say what you spent
+                <p className="text-center text-sm text-gray-500 mt-6">
+                  Speak naturally, e.g. "Spent $4 on coffee"
                 </p>
               </div>
             )}
@@ -859,11 +872,11 @@ export default function SpendVoice() {
                     
                     return (
                       <Card key={transaction.id} className="group hover:shadow-sm transition-all transaction-card border border-gray-100">
-                        <CardContent className="p-5">
+                        <CardContent className="p-6">
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-start gap-4 flex-1">
-                              <div className={`w-12 h-12 ${categoryStyle.bgColor} rounded-full border-2 ${categoryStyle.borderColor} flex items-center justify-center flex-shrink-0`}>
-                                <span className="text-2xl">
+                              <div className={`w-11 h-11 ${categoryStyle.bgColor} rounded-full border-2 ${categoryStyle.borderColor} flex items-center justify-center flex-shrink-0`}>
+                                <span className="text-xl">
                                   {categoryStyle.icon}
                                 </span>
                               </div>
@@ -891,16 +904,16 @@ export default function SpendVoice() {
                                       setEditingField('merchant');
                                       setTempEditValue(transaction.merchant);
                                     }}
-                                    className="font-bold text-gray-900 text-lg cursor-pointer hover:text-green-600 transition-colors"
+                                    className="font-bold text-gray-900 text-base cursor-pointer hover:text-green-600 transition-colors"
                                   >
                                     {transaction.merchant}
                                   </div>
                                 )}
 
-                                <Badge variant="outline" className={`text-xs px-2 py-0.5 ${getCategoryStyle(transaction.category).textColor} border-current opacity-70`}>
+                                <Badge variant="outline" className={`text-xs px-2 py-0.5 ${getCategoryStyle(transaction.category).textColor} border-current opacity-85`}>
                                   {transaction.category}
                                 </Badge>
-                                <div className="text-xs text-gray-400 mt-1.5">
+                                <div className="text-[11px] text-gray-400 mt-1.5">
                                   {transaction.time}
                                 </div>
                               </div>
@@ -930,7 +943,7 @@ export default function SpendVoice() {
                                     setEditingField('amount');
                                     setTempEditValue(transaction.amount.toString());
                                   }}
-                                  className="text-xl font-bold text-gray-900 font-mono tabular-nums cursor-pointer hover:text-green-600 transition-colors"
+                                  className="text-2xl font-extrabold text-gray-900 font-mono tabular-nums cursor-pointer hover:text-green-600 transition-colors"
                                 >
                                   {formatCurrency(transaction.amount)}
                                 </div>
